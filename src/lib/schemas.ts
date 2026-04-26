@@ -1,21 +1,17 @@
 import { z } from "zod";
 
-// Schema used for AI generation (core review fields only)
 export const coreReviewSchema = z.object({
   summary: z.string(),
   verdict: z.enum(["approve", "request_changes", "needs_info"]),
-  comments: z.array(
-    z.object({
-      file: z.string(),
-      line: z.number().nullable(),
-      severity: z.enum(["critical", "warning", "suggestion", "praise"]),
-      message: z.string(),
-    })
-  ),
+  comments: z.array(z.object({
+    file: z.string(),
+    line: z.number().nullable(),
+    severity: z.enum(["critical", "warning", "suggestion", "praise"]),
+    message: z.string(),
+  })),
   positives: z.array(z.string()),
 });
 
-// Full schema including static context fields injected by the API
 export const reviewSchema = coreReviewSchema.extend({
   changedFiles: z.array(z.object({
     filename: z.string(),
@@ -39,6 +35,13 @@ export const reviewSchema = coreReviewSchema.extend({
       severity: z.string(),
     })),
   })).optional(),
+  bundleImpact: z.array(z.object({
+    pkg: z.string(),
+    sizeGzip: z.number(),
+    sizeParsed: z.number(),
+    isNew: z.boolean(),
+  })).optional(),
+  teamStyleConcerns: z.array(z.string()).optional(),
 });
 
 export type PRReview = z.infer<typeof reviewSchema>;

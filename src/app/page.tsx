@@ -1,325 +1,241 @@
-"use client";
+import { SignInButton } from "@/components/SignInButton";
+import {
+  GitPullRequest, ShieldCheck, Package, Cpu,
+  Users, MessageSquare, Zap, Lock,
+} from "lucide-react";
 
-import { useState } from "react";
-import { Check } from "lucide-react";
-import { experimental_useObject as useObject } from "@ai-sdk/react";
-import { reviewSchema, type PRReview } from "@/lib/schemas";
-import { parseRepo, loadHistory, saveHistory, SEV, type Severity, type HistoryEntry } from "@/lib/constants";
+const FEATURES = [
+  {
+    Icon: Zap,
+    title: "15-second reviews",
+    desc: "Full AI review in under 15 seconds — faster than opening Slack to ping your reviewer.",
+    color: "#F59E0B",
+  },
+  {
+    Icon: ShieldCheck,
+    title: "Security scanning",
+    desc: "Automatically queries the OSV.dev database for CVEs in every new dependency.",
+    color: "#10B981",
+  },
+  {
+    Icon: Package,
+    title: "Bundle impact",
+    desc: "Flags packages over 50kb gzipped before they quietly bloat your production bundle.",
+    color: "#6366F1",
+  },
+  {
+    Icon: Cpu,
+    title: "CI context-aware",
+    desc: "The review knows if your tests are failing and leads with that in the summary.",
+    color: "#3B82F6",
+  },
+  {
+    Icon: Users,
+    title: "Team style learning",
+    desc: "Reads your last 50 review comments and mirrors your team's tone and top concerns.",
+    color: "#EC4899",
+  },
+  {
+    Icon: MessageSquare,
+    title: "Chat with any PR",
+    desc: "\"What's the riskiest change?\" → get a line-specific answer in seconds.",
+    color: "#8B5CF6",
+  },
+];
 
-import { Sidebar } from "@/components/Sidebar";
-import { VerdictBadge } from "@/components/VerdictBadge";
-import { MetricCard } from "@/components/MetricCard";
-import { SectionLabel } from "@/components/SectionLabel";
-import { StreamingDot } from "@/components/StreamingDot";
-import { CommentCard } from "@/components/CommentCard";
-import { DiffHeatmap } from "@/components/DiffHeatmap";
-import { ReviewBadge } from "@/components/ReviewBadge";
-import { EmptyState } from "@/components/EmptyState";
-import { CIChecksPanel } from "@/components/CIChecksPanel";
-import { VulnerabilitiesPanel } from "@/components/VulnerabilitiesPanel";
-import { ExportButton } from "@/components/ExportButton";
+const STEPS = [
+  { n: "1", title: "Paste a PR URL", body: "Any public or private GitHub pull request you have access to." },
+  { n: "2", title: "AI reviews in 15s", body: "Gemini 2.5 Flash reads the diff, CI results, linked issues, and dependency graph in parallel." },
+  { n: "3", title: "Ask follow-ups", body: "Chat directly with the review. Ask for fixes, risk assessments, or merge recommendations." },
+];
 
-export default function Home() {
-  const [prUrl, setPrUrl]           = useState("");
-  const [activeSevs, setActiveSevs] = useState<Set<Severity>>(new Set(["critical", "warning", "suggestion", "praise"]));
-  const [history, setHistory]       = useState<HistoryEntry[]>(loadHistory);
-  const [selected, setSelected]     = useState<HistoryEntry | null>(null);
-
-  const { object, submit, isLoading, error } = useObject({
-    api: "/api/review",
-    schema: reviewSchema,
-    onFinish({ object: finished }) {
-      if (!finished || !prUrl) return;
-      const { repo, prNumber } = parseRepo(prUrl);
-      const entry: HistoryEntry = {
-        prUrl, repo, prNumber,
-        review: finished as PRReview,
-        reviewedAt: Date.now(),
-      };
-      const next = [entry, ...history.filter(h => h.prUrl !== prUrl)];
-      setHistory(next);
-      saveHistory(next);
-      setSelected(entry);
-    },
-  });
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!prUrl.trim() || isLoading) return;
-    setSelected(null);
-    submit({ prUrl: prUrl.trim() });
-  };
-
-  const toggleSev = (s: Severity) => {
-    setActiveSevs(prev => {
-      const next = new Set(prev);
-      next.has(s) ? next.delete(s) : next.add(s);
-      return next;
-    });
-  };
-
-  const handleSelectHistory = (entry: HistoryEntry) => {
-    setSelected(entry);
-    setPrUrl(entry.prUrl);
-  };
-
-  const review    = (selected?.review ?? object ?? {}) as Partial<PRReview>;
-  const { repo, prNumber } = prUrl ? parseRepo(prUrl) : { repo: "", prNumber: "" };
-  const hasReview = !!(review.summary || review.verdict);
-
-  const counts = {
-    critical:   review.comments?.filter(c => c.severity === "critical").length   ?? 0,
-    warning:    review.comments?.filter(c => c.severity === "warning").length    ?? 0,
-    suggestion: review.comments?.filter(c => c.severity === "suggestion").length ?? 0,
-    praise:     review.comments?.filter(c => c.severity === "praise").length     ?? 0,
-  };
-
-  const filtered       = review.comments?.filter(c => activeSevs.has(c.severity as Severity)) ?? [];
-  const uniqueFileCount = [...new Set(review.comments?.map(c => c.file))].length;
-
+export default function LandingPage() {
   return (
-    <>
-      <style>{`
-        @keyframes prpulse { 0%,100%{opacity:1} 50%{opacity:.2} }
-        @keyframes prspin  { to { transform: rotate(360deg); } }
+    <div style={{ minHeight: "100vh", background: "#080B12", color: "#fff", fontFamily: "var(--font-geist-sans, system-ui, sans-serif)" }}>
 
-        .pr-input {
-          flex: 1; height: 40px;
-          border: 1px solid var(--color-border-secondary);
-          border-radius: 8px; padding: 0 14px; font-size: 13px;
-          color: var(--color-text-primary);
-          background: var(--color-background-primary);
-          outline: none; transition: border-color 0.15s, box-shadow 0.15s;
-        }
-        .pr-input:focus {
-          border-color: #93C5FD;
-          box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
-        }
-        .pr-input::placeholder { color: var(--color-text-tertiary); }
+      {/* nav */}
+      <nav style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "0 40px", height: 60,
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        position: "sticky", top: 0, zIndex: 50,
+        background: "rgba(8,11,18,0.85)",
+        backdropFilter: "blur(12px)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <div style={{
+            width: 30, height: 30, borderRadius: 8, background: "#2563EB",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <GitPullRequest size={15} color="#fff" />
+          </div>
+          <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.02em" }}>DiffWatch</span>
+        </div>
+        <SignInButton />
+      </nav>
 
-        .pr-btn {
-          height: 40px; padding: 0 18px; border-radius: 8px;
-          background: #2563EB; color: #fff;
-          font-size: 13px; font-weight: 500;
-          border: none; cursor: pointer;
-          transition: background 0.15s, box-shadow 0.15s;
-          white-space: nowrap;
-        }
-        .pr-btn:hover:not(:disabled) {
-          background: #1D4ED8;
-          box-shadow: 0 1px 6px rgba(37,99,235,0.35);
-        }
-        .pr-btn:disabled { background: #93C5FD; cursor: not-allowed; }
+      {/* hero */}
+      <section style={{
+        padding: "96px 40px 80px",
+        maxWidth: 960, margin: "0 auto",
+        textAlign: "center",
+      }}>
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 7,
+          padding: "5px 14px 5px 10px", borderRadius: 99,
+          background: "rgba(37,99,235,0.12)", border: "1px solid rgba(37,99,235,0.3)",
+          fontSize: 12, fontWeight: 500, color: "#93C5FD",
+          marginBottom: 32, letterSpacing: "0.01em",
+        }}>
+          <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#3B82F6" }} />
+          Free — powered by Gemini 2.5 Flash &amp; GitHub API
+        </div>
 
-        .pr-hist-item {
-          cursor: pointer;
-          transition: background 0.1s, border-color 0.1s;
-        }
-        .pr-hist-item:hover { background: var(--color-background-secondary) !important; }
+        <h1 style={{
+          fontSize: "clamp(40px, 6vw, 68px)", fontWeight: 800,
+          letterSpacing: "-0.04em", lineHeight: 1.06,
+          margin: "0 0 24px",
+          background: "linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.55) 100%)",
+          WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+          backgroundClip: "text",
+        }}>
+          Stop waiting<br />for code reviews.
+        </h1>
 
-        .pr-filter-pill {
-          cursor: pointer; user-select: none;
-          transition: opacity 0.15s, border-color 0.15s;
-        }
-        .pr-filter-pill:hover { opacity: 0.75; }
-      `}</style>
+        <p style={{
+          fontSize: "clamp(16px, 2vw, 19px)", color: "rgba(255,255,255,0.5)",
+          lineHeight: 1.7, maxWidth: 560, margin: "0 auto 40px",
+          fontWeight: 400,
+        }}>
+          Get senior-engineer quality reviews on any GitHub PR in under 15 seconds —
+          with security scanning, CI context, and follow-up chat.
+        </p>
 
-      <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", minHeight: "100vh" }}>
-        <Sidebar history={history} selectedUrl={selected?.prUrl ?? null} onSelect={handleSelectHistory} />
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+          <SignInButton />
+          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", margin: 0 }}>
+            No credit card. Free tier only. Under 15 seconds.
+          </p>
+        </div>
+      </section>
 
-        <main style={{ padding: "28px 32px", display: "flex", flexDirection: "column", gap: 24, minWidth: 0, overflowY: "auto" }}>
+      {/* features */}
+      <section style={{
+        padding: "0 40px 96px",
+        maxWidth: 1100, margin: "0 auto",
+      }}>
+        <div style={{ textAlign: "center", marginBottom: 48 }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>
+            What it does
+          </p>
+          <h2 style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.03em", color: "#fff", margin: 0 }}>
+            Everything a senior engineer checks
+          </h2>
+        </div>
 
-          {/* URL input */}
-          <form onSubmit={handleSubmit} style={{ display: "flex", gap: 8 }}>
-            <input
-              className="pr-input"
-              value={prUrl}
-              onChange={e => setPrUrl(e.target.value)}
-              placeholder="https://github.com/owner/repo/pull/123"
-            />
-            <button type="submit" className="pr-btn" disabled={isLoading}>
-              {isLoading
-                ? <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    <svg width="12" height="12" viewBox="0 0 12 12" style={{ animation: "prspin 0.8s linear infinite" }}>
-                      <circle cx="6" cy="6" r="4.5" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" />
-                      <path d="M6 1.5A4.5 4.5 0 0 1 10.5 6" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
-                    </svg>
-                    Reviewing…
-                  </span>
-                : "Review PR"}
-            </button>
-          </form>
-
-          {/* error */}
-          {error && (
-            <div style={{
-              padding: "11px 14px", borderRadius: 8, fontSize: 13,
-              background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA",
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+          {FEATURES.map(({ Icon, title, desc, color }) => (
+            <div key={title} style={{
+              padding: "24px", borderRadius: 14,
+              background: "rgba(255,255,255,0.035)",
+              border: "1px solid rgba(255,255,255,0.07)",
+              transition: "border-color 0.2s",
             }}>
-              {error.message}
-            </div>
-          )}
-
-          {/* results */}
-          {hasReview && (
-            <>
-              {/* PR header */}
               <div style={{
-                display: "flex", alignItems: "flex-start", justifyContent: "space-between",
-                gap: 12, paddingBottom: 20, borderBottom: "1px solid var(--color-border-tertiary)",
-                flexWrap: "wrap",
+                width: 36, height: 36, borderRadius: 9,
+                background: `${color}18`,
+                border: `1px solid ${color}30`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                marginBottom: 14,
               }}>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 3, letterSpacing: "-0.02em" }}>
-                    {repo}
-                    <span style={{ color: "var(--color-text-tertiary)", fontWeight: 400 }}> #{prNumber}</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
-                    {review.comments?.length ?? 0} comment{(review.comments?.length ?? 0) !== 1 ? "s" : ""} across{" "}
-                    {uniqueFileCount} file{uniqueFileCount !== 1 ? "s" : ""}
-                  </div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  {review.verdict && selected?.review && (
-                    <ReviewBadge verdict={review.verdict} criticalCount={counts.critical} />
-                  )}
-                  {review.verdict && <VerdictBadge v={review.verdict} />}
-                </div>
+                <Icon size={17} color={color} />
               </div>
-
-              {/* export buttons — only shown once streaming is done */}
-              {selected?.review && !isLoading && (
-                <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  <ExportButton review={selected.review} prUrl={prUrl} />
-                </div>
-              )}
-
-              {/* metric cards */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-                <MetricCard label="Critical"    value={counts.critical}   color="#DC2626" />
-                <MetricCard label="Warnings"    value={counts.warning}    color="#D97706" />
-                <MetricCard label="Suggestions" value={counts.suggestion} color="#2563EB" />
-                <MetricCard label="Praise"      value={counts.praise}     color="#16A34A" />
+              <div style={{ fontSize: 15, fontWeight: 600, color: "#fff", marginBottom: 8, letterSpacing: "-0.01em" }}>
+                {title}
               </div>
-
-              {/* summary */}
-              {review.summary && (
-                <div>
-                  <SectionLabel>Summary</SectionLabel>
-                  <div style={{
-                    background: "var(--color-background-primary)",
-                    border: "1px solid var(--color-border-secondary)",
-                    borderLeft: "3px solid #2563EB",
-                    borderRadius: 8, padding: "14px 16px",
-                    fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.75,
-                  }}>
-                    {review.summary}
-                    {isLoading && <StreamingDot />}
-                  </div>
-                </div>
-              )}
-
-              {/* CI checks */}
-              {review.ciChecks && review.ciChecks.length > 0 && (
-                <CIChecksPanel checks={review.ciChecks} />
-              )}
-
-              {/* vulnerabilities */}
-              {review.vulnerabilities && review.vulnerabilities.length > 0 && (
-                <VulnerabilitiesPanel vulnerabilities={review.vulnerabilities} />
-              )}
-
-              {/* diff heatmap */}
-              {review.changedFiles && review.changedFiles.length > 0 && (
-                <DiffHeatmap files={review.changedFiles} />
-              )}
-
-              {/* positives */}
-              {review.positives && review.positives.length > 0 && (
-                <div>
-                  <SectionLabel>What&apos;s good</SectionLabel>
-                  <div style={{
-                    background: "var(--color-background-primary)",
-                    border: "1px solid var(--color-border-secondary)",
-                    borderRadius: 8, padding: "12px 16px",
-                    display: "flex", flexDirection: "column", gap: 8,
-                  }}>
-                    {review.positives.map((p, i) => (
-                      <div key={i} style={{ display: "flex", gap: 10, fontSize: 13, color: "var(--color-text-secondary)" }}>
-                        <Check size={14} color="#16A34A" style={{ flexShrink: 0, marginTop: 2 }} />
-                        {p}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* comments */}
-              {review.comments && review.comments.length > 0 && (
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                    <SectionLabel>Comments ({review.comments.length})</SectionLabel>
-                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                      {(["critical", "warning", "suggestion", "praise"] as Severity[]).map(s => {
-                        const on  = activeSevs.has(s);
-                        const cfg = SEV[s];
-                        return (
-                          <div
-                            key={s}
-                            className="pr-filter-pill"
-                            onClick={() => toggleSev(s)}
-                            style={{
-                              fontSize: 11, padding: "3px 10px", borderRadius: 99, fontWeight: 500,
-                              border: `1px solid ${on ? cfg.border : "var(--color-border-secondary)"}`,
-                              background: on ? cfg.bg : "var(--color-background-primary)",
-                              color: on ? cfg.text : "var(--color-text-tertiary)",
-                            }}
-                          >
-                            {cfg.label}{counts[s] > 0 ? ` · ${counts[s]}` : ""}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {filtered.map((c, i) => (
-                      <CommentCard
-                        key={i}
-                        file={c.file}
-                        line={c.line}
-                        severity={c.severity as Severity}
-                        message={c.message}
-                      />
-                    ))}
-                    {filtered.length === 0 && (
-                      <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", padding: "8px 0" }}>
-                        No comments match the selected filters.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* empty state */}
-          {!hasReview && !isLoading && !error && <EmptyState />}
-
-          {/* loading skeleton */}
-          {isLoading && !hasReview && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 8 }}>
-              {[80, 60, 90, 50, 70].map((w, i) => (
-                <div key={i} style={{
-                  height: 13, width: `${w}%`, borderRadius: 6,
-                  background: "var(--color-background-secondary)",
-                  animation: `prpulse ${1 + i * 0.1}s ease-in-out infinite`,
-                }} />
-              ))}
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", lineHeight: 1.65 }}>
+                {desc}
+              </div>
             </div>
-          )}
-        </main>
-      </div>
-    </>
+          ))}
+        </div>
+      </section>
+
+      {/* how it works */}
+      <section style={{
+        padding: "80px 40px",
+        borderTop: "1px solid rgba(255,255,255,0.06)",
+        background: "rgba(255,255,255,0.02)",
+      }}>
+        <div style={{ maxWidth: 760, margin: "0 auto", textAlign: "center" }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>
+            How it works
+          </p>
+          <h2 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em", color: "#fff", margin: "0 0 56px" }}>
+            Three steps to a better review
+          </h2>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, textAlign: "left" }}>
+            {STEPS.map(({ n, title, body }) => (
+              <div key={n} style={{
+                padding: "24px 24px 28px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.08)",
+              }}>
+                <div style={{
+                  fontSize: 12, fontWeight: 700, color: "#2563EB",
+                  marginBottom: 14, letterSpacing: "0.02em",
+                }}>
+                  {n.padStart(2, "0")}
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 600, color: "#fff", marginBottom: 8, letterSpacing: "-0.01em" }}>
+                  {title}
+                </div>
+                <div style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", lineHeight: 1.65 }}>
+                  {body}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* final CTA */}
+      <section style={{
+        padding: "80px 40px",
+        textAlign: "center",
+        borderTop: "1px solid rgba(255,255,255,0.06)",
+      }}>
+        <Lock size={20} color="rgba(255,255,255,0.3)" style={{ marginBottom: 16 }} />
+        <h2 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em", color: "#fff", margin: "0 0 12px" }}>
+          Ready to review smarter?
+        </h2>
+        <p style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", margin: "0 0 28px", lineHeight: 1.65 }}>
+          Sign in with GitHub to get started. No configuration required.
+        </p>
+        <SignInButton />
+      </section>
+
+      {/* footer */}
+      <footer style={{
+        padding: "24px 40px",
+        borderTop: "1px solid rgba(255,255,255,0.06)",
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        flexWrap: "wrap", gap: 12,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{
+            width: 22, height: 22, borderRadius: 6, background: "#2563EB",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <GitPullRequest size={11} color="#fff" />
+          </div>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>DiffWatch</span>
+        </div>
+        <p style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", margin: 0 }}>
+          Built with Gemini 2.5 Flash · GitHub API · OSV.dev · Bundlephobia
+        </p>
+      </footer>
+    </div>
   );
 }

@@ -2,11 +2,56 @@ import { google } from "@ai-sdk/google";
 import { streamObject } from "ai";
 import { coreReviewSchema } from "@/lib/schemas";
 import { parsePRUrl, fetchPRContext } from "@/lib/github";
+import { fetchBundleSizes, formatBytes } from "@/lib/bundle";
+import { fetchTeamStyle } from "@/lib/teamstyle";
+import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 
 export async function POST(req: Request) {
   const { prUrl } = await req.json();
   const { owner, repo, pull } = parsePRUrl(prUrl);
-  const ctx = await fetchPRContext(owner, repo, pull);
+
+  // fetch custom rules for this user (best-effort)
+  let customRules = "";
+  try {
+    const auth = await createClient();
+    const { data: { user } } = await auth.auth.getUser();
+    if (user) {
+      const { data } = await supabase
+        .from("user_settings")
+        .select("custom_rules")
+        .eq("user_id", user.id)
+        .single();
+      customRules = data?.custom_rules ?? "";
+    }
+  } catch {}
+
+
+  const [ctx, teamStyle] = await Promise.all([
+    fetchPRContext(owner, repo, pull),
+    fetchTeamStyle(owner, repo),
+  ]);
+
+  const bundleImpact = await fetchBundleSizes(ctx.diff, ctx.changedFiles);
+
+  const styleBlock = teamStyle.exampleComments.length > 0 ? `
+## This team's review style
+Tone: ${teamStyle.toneDescription}
+Top concerns: ${teamStyle.topConcerns.join(", ") || "general code quality"}
+
+Real review comments from this repo (mirror this style exactly):
+${teamStyle.exampleComments.map((c, i) => `${i + 1}. "${c}"`).join("\n")}
+
+Write your comments in the same tone and voice as the examples above.
+` : "";
+
+  const bundleBlock = bundleImpact.length > 0 ? `
+## Bundle size impact
+${bundleImpact.map(b =>
+  `  - ${b.pkg}: ${formatBytes(b.sizeGzip)} gzipped${b.isNew ? " (NEW)" : " (updated)"}`
+).join("\n")}
+Flag any package over 50kb gzipped as a warning.
+` : "";
 
   const ciSummary = ctx.ciChecks.length
     ? ctx.ciChecks.map(c => `  - ${c.name}: ${c.conclusion ?? c.status}`).join("\n")
@@ -18,20 +63,14 @@ export async function POST(req: Request) {
       ).join("\n")
     : "  No known vulnerabilities found";
 
-  const similarSummary = ctx.similarPRs.length
-    ? ctx.similarPRs.map(p => `  - #${p.number}: ${p.title}`).join("\n")
-    : "  None found";
-
-  const linkedIssueSummary = ctx.linkedIssue
-    ? `Issue #${ctx.linkedIssue.number}: ${ctx.linkedIssue.title}\n${ctx.linkedIssue.body}`
-    : "None";
-
   const prompt = `
 You are a senior software engineer performing a thorough, opinionated code review.
-
+${styleBlock}
 ## PR info
 Title: "${ctx.title}"
-Author: @${ctx.author} (${ctx.contributorStats.firstContribution ? "FIRST-TIME contributor — be welcoming" : `${ctx.contributorStats.mergedPRs} merged PRs in this repo`})
+Author: @${ctx.author} (${ctx.contributorStats.firstContribution
+    ? "FIRST-TIME contributor — be welcoming"
+    : `${ctx.contributorStats.mergedPRs} merged PRs in this repo`})
 Branch: ${ctx.headBranch} → ${ctx.baseBranch}
 
 ## Description
@@ -41,13 +80,15 @@ ${ctx.description}
 ${ciSummary}
 
 ## Linked issue
-${linkedIssueSummary}
+${ctx.linkedIssue
+    ? `Issue #${ctx.linkedIssue.number}: ${ctx.linkedIssue.title}\n${ctx.linkedIssue.body}`
+    : "None"}
 
 ## Dependency vulnerabilities
 ${vulnSummary}
-
+${bundleBlock}
 ## Similar merged PRs (same files)
-${similarSummary}
+${ctx.similarPRs.map(p => `  - #${p.number}: ${p.title}`).join("\n") || "  None found"}
 
 ## Changed files (${ctx.changedFiles.length} total)
 ${ctx.changedFiles.map(f => `  ${f.filename} (+${f.additions}/-${f.deletions})`).join("\n")}
@@ -56,13 +97,12 @@ ${ctx.changedFiles.map(f => `  ${f.filename} (+${f.additions}/-${f.deletions})`)
 \`\`\`diff
 ${ctx.diff}
 \`\`\`
-
+${customRules ? `\n## Custom rules (enforce these strictly)\n${customRules}\n` : ""}
 Instructions:
-- If CI is failing, mention it prominently in your summary
-- If vulnerabilities were found, flag the affected packages as critical issues
-- If a linked issue exists, verify the fix actually addresses it
-- Reference similar PRs if they're relevant context
-- Be specific — include exact file names and line numbers
+- Lead with CI failures in your summary if any checks are failing
+- Mark vulnerable packages as critical issues
+- Verify the linked issue is actually fixed if one exists
+- Reference exact file names and line numbers
 - Be welcoming if this is a first-time contributor
 `.trim();
 
@@ -72,16 +112,15 @@ Instructions:
     prompt,
   });
 
-  // Prepend the static context fields to the AI-generated JSON stream.
-  // useObject accumulates raw text and calls parsePartialJson, so we inject
-  // changedFiles/ciChecks/vulnerabilities as the opening keys of the merged object,
-  // then stream the AI-generated fields (summary/verdict/comments/positives) after.
-  const staticPrefix =
-    JSON.stringify({
-      changedFiles: ctx.changedFiles,
-      ciChecks: ctx.ciChecks,
-      vulnerabilities: ctx.vulnerabilities,
-    }).slice(0, -1) + ","; // strip trailing } and add comma
+  // inject static context + bundle data as prefix before AI stream
+  const staticData = {
+    changedFiles: ctx.changedFiles,
+    ciChecks: ctx.ciChecks,
+    vulnerabilities: ctx.vulnerabilities,
+    bundleImpact,
+    teamStyleConcerns: teamStyle.topConcerns,
+  };
+  const staticPrefix = JSON.stringify(staticData).slice(0, -1) + ",";
 
   const encoder = new TextEncoder();
   let openBraceSkipped = false;

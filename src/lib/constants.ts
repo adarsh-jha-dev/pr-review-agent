@@ -3,6 +3,7 @@ import type { PRReview } from "@/lib/schemas";
 export type Severity = "critical" | "warning" | "suggestion" | "praise";
 
 export interface HistoryEntry {
+  id: string;
   prUrl: string;
   repo: string;
   prNumber: string;
@@ -26,14 +27,6 @@ export const VERDICT_CFG = {
 export function parseRepo(url: string) {
   const m = url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
   return m ? { repo: m[1], prNumber: m[2] } : { repo: "unknown/repo", prNumber: "0" };
-}
-
-export function loadHistory(): HistoryEntry[] {
-  try { return JSON.parse(localStorage.getItem("pr-history") ?? "[]"); } catch { return []; }
-}
-
-export function saveHistory(h: HistoryEntry[]) {
-  localStorage.setItem("pr-history", JSON.stringify(h.slice(0, 20)));
 }
 
 export function timeAgo(ts: number) {

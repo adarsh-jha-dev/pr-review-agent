@@ -1,13 +1,15 @@
 "use client";
-import { Check, X, CircleHelp } from "lucide-react";
+import { useState, useEffect } from "react";
+import { GitPullRequest, Sun, Moon, Search } from "lucide-react";
 import { VERDICT_CFG, timeAgo, type HistoryEntry } from "@/lib/constants";
-import { PRIcon } from "./PRIcon";
+import { UserMenu } from "./UserMenu";
 
-const VERDICT_ICONS = {
-  approve: Check,
-  request_changes: X,
-  needs_info: CircleHelp,
+const VERDICT_DOT = {
+  approve: "#22C55E",
+  request_changes: "#EF4444",
+  needs_info: "#F59E0B",
 };
+
 
 interface SidebarProps {
   history: HistoryEntry[];
@@ -16,82 +18,147 @@ interface SidebarProps {
 }
 
 export function Sidebar({ history, selectedUrl, onSelect }: SidebarProps) {
+  const [search, setSearch] = useState("");
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("dw-theme");
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const isDark = saved ? saved === "dark" : prefersDark;
+    setDark(isDark);
+    document.documentElement.dataset.theme = isDark ? "dark" : "light";
+  }, []);
+
+  const toggleDark = () => {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.dataset.theme = next ? "dark" : "light";
+    localStorage.setItem("dw-theme", next ? "dark" : "light");
+  };
+
+  const filtered = search.trim()
+    ? history.filter(h =>
+        h.repo.toLowerCase().includes(search.toLowerCase()) ||
+        h.prNumber.includes(search.replace("#", ""))
+      )
+    : history;
+
   return (
     <aside style={{
-      background: "var(--color-background-primary)",
-      borderRight: "1px solid var(--color-border-tertiary)",
+      width: 240, flexShrink: 0,
+      background: "#0F172A",
       display: "flex", flexDirection: "column",
+      borderRight: "1px solid rgba(255,255,255,0.06)",
     }}>
+      {/* header */}
       <div style={{
-        padding: "16px 16px 14px",
-        borderBottom: "1px solid var(--color-border-tertiary)",
+        padding: "14px 14px 12px",
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
         display: "flex", alignItems: "center", gap: 9,
       }}>
         <div style={{
-          width: 28, height: 28, borderRadius: 7,
-          background: "#2563EB",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          flexShrink: 0,
+          width: 28, height: 28, borderRadius: 8, background: "#2563EB",
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
         }}>
-          <PRIcon size={14} color="#fff" />
+          <GitPullRequest size={14} color="#fff" />
         </div>
-        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", letterSpacing: "-0.01em" }}>
-          PR Review
+        <span style={{ fontSize: 14, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em", flex: 1 }}>
+          DiffWatch
         </span>
+        <button onClick={toggleDark} title={dark ? "Light mode" : "Dark mode"} style={{
+          background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6,
+          color: "rgba(255,255,255,0.4)", display: "flex", alignItems: "center",
+          transition: "color 0.15s",
+        }}
+          onMouseEnter={e => { e.currentTarget.style.color = "rgba(255,255,255,0.8)"; }}
+          onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.4)"; }}
+        >
+          {dark ? <Sun size={14} /> : <Moon size={14} />}
+        </button>
       </div>
 
-      <div style={{ flex: 1, padding: 10, overflowY: "auto" }}>
+      {/* search */}
+      <div style={{ padding: "10px 10px 0" }}>
         <div style={{
-          fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)",
-          letterSpacing: "0.07em", textTransform: "uppercase",
-          padding: "4px 6px 8px",
+          display: "flex", alignItems: "center", gap: 7,
+          background: "rgba(255,255,255,0.07)",
+          border: "1px solid rgba(255,255,255,0.1)",
+          borderRadius: 7, padding: "0 9px", height: 30,
         }}>
-          Recent
+          <Search size={11} color="rgba(255,255,255,0.3)" style={{ flexShrink: 0 }} />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search repos…"
+            style={{
+              background: "none", border: "none", outline: "none", flex: 1,
+              fontSize: 12, color: "rgba(255,255,255,0.7)",
+              fontFamily: "inherit",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* history list */}
+      <div style={{ flex: 1, padding: "8px 8px", overflowY: "auto" }}>
+        <div style={{
+          fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.25)",
+          letterSpacing: "0.09em", textTransform: "uppercase",
+          padding: "6px 8px 8px",
+        }}>
+          {search ? `${filtered.length} result${filtered.length !== 1 ? "s" : ""}` : "Recent"}
         </div>
 
-        {history.length === 0 && (
-          <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", padding: "2px 6px", lineHeight: 1.6 }}>
-            No reviews yet.
+        {filtered.length === 0 && (
+          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", padding: "4px 8px", lineHeight: 1.6 }}>
+            {search ? "No matches." : "No reviews yet."}
           </p>
         )}
 
-        {history.map(h => {
+        {filtered.map(h => {
           const isActive = selectedUrl === h.prUrl;
+          const dot = VERDICT_DOT[h.review.verdict];
           const cfg = VERDICT_CFG[h.review.verdict];
-          const Icon = VERDICT_ICONS[h.review.verdict];
           return (
-            <div
+            <button
               key={h.prUrl}
-              className="pr-hist-item"
               onClick={() => onSelect(h)}
               style={{
+                width: "100%", textAlign: "left",
                 padding: "9px 10px", borderRadius: 7, marginBottom: 2,
-                border: `1px solid ${isActive ? "#BFDBFE" : "transparent"}`,
-                background: isActive ? "#EFF6FF" : "transparent",
+                background: isActive ? "rgba(37,99,235,0.18)" : "transparent",
+                border: `1px solid ${isActive ? "rgba(37,99,235,0.35)" : "transparent"}`,
+                cursor: "pointer", transition: "background 0.12s, border-color 0.12s",
               }}
+              onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
+              onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
             >
               <div style={{
-                fontSize: 12, fontWeight: 500, marginBottom: 1,
-                color: isActive ? "#1E40AF" : "var(--color-text-primary)",
+                fontSize: 12, fontWeight: 600, marginBottom: 2,
+                color: isActive ? "#93C5FD" : "rgba(255,255,255,0.75)",
                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
               }}>
                 {h.repo}
               </div>
-              <div style={{ fontSize: 11, color: isActive ? "#3B82F6" : "var(--color-text-tertiary)", marginBottom: 6 }}>
+              <div style={{ fontSize: 11, color: isActive ? "#60A5FA" : "rgba(255,255,255,0.3)", marginBottom: 7 }}>
                 #{h.prNumber} · {timeAgo(h.reviewedAt)}
               </div>
               <span style={{
-                display: "inline-flex", alignItems: "center", gap: 3,
-                fontSize: 10, fontWeight: 500, padding: "2px 7px", borderRadius: 99,
-                background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`,
+                display: "inline-flex", alignItems: "center", gap: 4,
+                fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 99,
+                background: isActive ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.06)",
+                color: isActive ? "#fff" : "rgba(255,255,255,0.45)",
+                border: `1px solid ${isActive ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.08)"}`,
               }}>
-                <Icon size={10} strokeWidth={2.5} />
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: dot, flexShrink: 0 }} />
                 {cfg.label}
               </span>
-            </div>
+            </button>
           );
         })}
       </div>
+
+      <UserMenu />
     </aside>
   );
 }

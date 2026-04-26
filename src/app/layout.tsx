@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PR Review Agent",
-  description: "AI-powered senior-engineer code reviews for GitHub pull requests",
+  title: "DiffWatch — AI Code Reviews",
+  description: "Senior-engineer quality code reviews for any GitHub PR in under 15 seconds.",
 };
 
 export default function RootLayout({
