@@ -1,26 +1,51 @@
 @import "tailwindcss";
 
+/* ── design tokens ──────────────────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* surfaces */
+  --color-background:           #F5F5F7;
+  --color-background-primary:   #FFFFFF;
+  --color-background-secondary: #F2F2F5;
+
+  /* text */
+  --color-text-primary:   #0D0D12;
+  --color-text-secondary: #4B4B57;
+  --color-text-tertiary:  #9A9AA8;
+
+  /* borders */
+  --color-border-primary:   #CCCCD4;
+  --color-border-secondary: #E2E2EA;
+  --color-border-tertiary:  #EDEDF2;
+
+  /* accent */
+  --color-accent:    #2563EB;
+  --color-accent-bg: #EFF4FF;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ── base ───────────────────────────────────────────────────────────────── */
+html {
+  color-scheme: light;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+input, button, select, textarea {
+  font-family: inherit;
 }
