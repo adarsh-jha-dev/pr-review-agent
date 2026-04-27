@@ -42,6 +42,25 @@ export const reviewSchema = coreReviewSchema.extend({
     isNew: z.boolean(),
   })).optional(),
   teamStyleConcerns: z.array(z.string()).optional(),
+  mergeConflictRisks: z.array(z.object({
+    prNumber: z.number(),
+    prTitle: z.string(),
+    prUrl: z.string(),
+    sharedFiles: z.array(z.string()),
+  })).optional(),
+  archaeology: z.array(z.object({
+    filename: z.string(),
+    commitCount: z.number(),
+    lastModified: z.string(),
+    uniqueAuthors: z.number(),
+    isHotspot: z.boolean(),
+  })).optional(),
+  timeBombs: z.array(z.object({
+    file: z.string(),
+    line: z.number().nullable(),
+    type: z.string(),
+    content: z.string(),
+  })).optional(),
 });
 
 export type PRReview = z.infer<typeof reviewSchema>;

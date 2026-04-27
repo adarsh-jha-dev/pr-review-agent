@@ -1,11 +1,43 @@
 import { google } from "@ai-sdk/google";
 import { streamObject } from "ai";
 import { coreReviewSchema } from "@/lib/schemas";
-import { parsePRUrl, fetchPRContext } from "@/lib/github";
+import { parsePRUrl, fetchPRContext, fetchArchaeology, fetchMergeConflictRisks } from "@/lib/github";
 import { fetchBundleSizes, formatBytes } from "@/lib/bundle";
 import { fetchTeamStyle } from "@/lib/teamstyle";
 import { supabase } from "@/lib/supabase";
 import { createClient } from "@/lib/supabase/server";
+
+interface TimeBomb { file: string; line: number | null; type: string; content: string; }
+
+function detectTimeBombs(diff: string): TimeBomb[] {
+  const bombs: TimeBomb[] = [];
+  const patterns = [
+    { type: "todo",          regex: /\b(TODO|FIXME|HACK|XXX|BUG)\b/ },
+    { type: "console",       regex: /console\.(log|error|warn|debug|info)\s*\(/ },
+    { type: "ts-ignore",     regex: /@ts-ignore|@ts-nocheck/ },
+    { type: "eslint-disable",regex: /eslint-disable/ },
+    { type: "hardcoded-date",regex: /new Date\(["']|["']\d{4}-\d{2}-\d{2}["']/ },
+    { type: "deprecated",    regex: /\bdeprecated\b/i },
+  ];
+  let currentFile = "";
+  let lineNum = 0;
+  for (const raw of diff.split("\n")) {
+    if (raw.startsWith("diff --git")) {
+      const m = raw.match(/b\/(.+)$/); currentFile = m ? m[1] : ""; lineNum = 0;
+    } else if (raw.startsWith("@@")) {
+      const m = raw.match(/\+(\d+)/); lineNum = m ? parseInt(m[1]) - 1 : lineNum;
+    } else if (raw.startsWith("+") && !raw.startsWith("+++")) {
+      lineNum++;
+      const content = raw.slice(1).trim();
+      for (const { type, regex } of patterns) {
+        if (regex.test(content)) { bombs.push({ file: currentFile, line: lineNum, type, content: content.slice(0, 120) }); break; }
+      }
+    } else if (!raw.startsWith("-")) {
+      lineNum++;
+    }
+  }
+  return bombs.slice(0, 25);
+}
 
 export async function POST(req: Request) {
   const { prUrl } = await req.json();
@@ -32,7 +64,13 @@ export async function POST(req: Request) {
     fetchTeamStyle(owner, repo),
   ]);
 
-  const bundleImpact = await fetchBundleSizes(ctx.diff, ctx.changedFiles);
+  const [bundleImpact, archaeology, mergeConflictRisks] = await Promise.all([
+    fetchBundleSizes(ctx.diff, ctx.changedFiles),
+    fetchArchaeology(owner, repo, ctx.changedFiles),
+    fetchMergeConflictRisks(owner, repo, pull, ctx.changedFiles),
+  ]);
+
+  const timeBombs = detectTimeBombs(ctx.diff);
 
   const styleBlock = teamStyle.exampleComments.length > 0 ? `
 ## This team's review style
@@ -119,6 +157,9 @@ Instructions:
     vulnerabilities: ctx.vulnerabilities,
     bundleImpact,
     teamStyleConcerns: teamStyle.topConcerns,
+    mergeConflictRisks,
+    archaeology,
+    timeBombs,
   };
   const staticPrefix = JSON.stringify(staticData).slice(0, -1) + ",";
 

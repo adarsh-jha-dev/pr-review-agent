@@ -5,7 +5,7 @@ export async function POST(req: Request) {
   const { file, line, severity, message } = await req.json();
 
   const result = streamText({
-    model: google("gemini-2.0-flash"),
+    model: google("gemini-2.5-flash"),
     prompt: `You are a code fix assistant. A code review flagged this issue:
 
 File: ${file}${line != null ? `:${line}` : ""}

@@ -79,17 +79,95 @@ export interface Vulnerability {
   vulns: { id: string; summary: string; severity: string }[];
 }
 
+export interface ArchaeologyEntry {
+  filename: string;
+  commitCount: number;
+  lastModified: string;
+  uniqueAuthors: number;
+  isHotspot: boolean;
+}
+
+export interface MergeConflictRisk {
+  prNumber: number;
+  prTitle: string;
+  prUrl: string;
+  sharedFiles: string[];
+}
+
+export async function fetchArchaeology(
+  owner: string,
+  repo: string,
+  files: FileStats[]
+): Promise<ArchaeologyEntry[]> {
+  const topFiles = files.slice(0, 5);
+  return Promise.all(
+    topFiles.map(async (f) => {
+      const commits = await gh(
+        `/repos/${owner}/${repo}/commits?path=${encodeURIComponent(f.filename)}&per_page=30`
+      )
+        .then(r => r.json())
+        .catch(() => []);
+      const uniqueAuthors = new Set(
+        (commits as any[]).map(c => c.commit?.author?.name).filter(Boolean)
+      ).size;
+      const lastModified: string = (commits as any[])[0]?.commit?.author?.date ?? "";
+      return {
+        filename: f.filename,
+        commitCount: (commits as any[]).length,
+        lastModified,
+        uniqueAuthors,
+        isHotspot: (commits as any[]).length >= 10,
+      };
+    })
+  );
+}
+
+export async function fetchMergeConflictRisks(
+  owner: string,
+  repo: string,
+  currentPRNumber: number,
+  currentFiles: FileStats[]
+): Promise<MergeConflictRisk[]> {
+  const currentFilenames = new Set(currentFiles.map(f => f.filename));
+  const openPRs = await gh(`/repos/${owner}/${repo}/pulls?state=open&per_page=15`)
+    .then(r => r.json())
+    .catch(() => []);
+
+  const results: MergeConflictRisk[] = [];
+  await Promise.all(
+    (openPRs as any[])
+      .filter(pr => pr.number !== currentPRNumber)
+      .slice(0, 8)
+      .map(async (pr) => {
+        const prFiles = await gh(`/repos/${owner}/${repo}/pulls/${pr.number}/files`)
+          .then(r => r.json())
+          .catch(() => []);
+        const sharedFiles = (prFiles as any[])
+          .map(f => f.filename as string)
+          .filter(fname => currentFilenames.has(fname));
+        if (sharedFiles.length > 0) {
+          results.push({
+            prNumber: pr.number,
+            prTitle: pr.title,
+            prUrl: pr.html_url,
+            sharedFiles,
+          });
+        }
+      })
+  );
+  return results;
+}
+
 export async function fetchPRContext(
   owner: string,
   repo: string,
   pull: number
 ): Promise<PRContext> {
   // parallel fetch everything
-  const [prRes, diffRes, filesRes, checksRes] = await Promise.all([
+  const [prRes, diffRes, filesRes] = await Promise.all([
     gh(`/repos/${owner}/${repo}/pulls/${pull}`),
     gh(`/repos/${owner}/${repo}/pulls/${pull}`, "application/vnd.github.v3.diff"),
     gh(`/repos/${owner}/${repo}/pulls/${pull}/files`),
-    gh(`/repos/${owner}/${repo}/commits`).then(() => null).catch(() => null), // placeholder
   ]);
 
   const pr = await prRes.json();

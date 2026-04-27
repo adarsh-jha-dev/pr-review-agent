@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Check, Settings, BarChart2 } from "lucide-react";
+import { toast } from "sonner";
 import { experimental_useObject as useObject } from "@ai-sdk/react";
 import { reviewSchema, type PRReview } from "@/lib/schemas";
 import { parseRepo, SEV, type Severity, type HistoryEntry } from "@/lib/constants";
@@ -25,6 +26,14 @@ import { BundleImpactPanel } from "@/components/BundleImpactPanel";
 import { VoiceButton } from "@/components/VoiceButton";
 import { SettingsModal } from "@/components/SettingsModal";
 import { StatsPanel } from "@/components/StatsPanel";
+import { RiskRadarChart } from "@/components/RiskRadarChart";
+import { FileRiskTreemap } from "@/components/FileRiskTreemap";
+import { IssueScatterMap } from "@/components/IssueScatterMap";
+import { MergeConflictPanel } from "@/components/MergeConflictPanel";
+import { ArchaeologyPanel } from "@/components/ArchaeologyPanel";
+import { TimeBombPanel } from "@/components/TimeBombPanel";
+import { PersonaPanel } from "@/components/PersonaPanel";
+import { ShipItModal } from "@/components/ShipItModal";
 
 export default function AppPage() {
   const [prUrl, setPrUrl]         = useState("");
@@ -45,13 +54,22 @@ export default function AppPage() {
       .catch(() => {});
   }, []);
 
-  const { object, submit, isLoading, error } = useObject({
+  const { object, submit, isLoading } = useObject({
     api: "/api/review",
     schema: reviewSchema,
     onFinish({ object: finished }) {
       if (!finished || !prUrl) return;
       const { repo, prNumber } = parseRepo(prUrl);
       const reviewedAt = Date.now();
+
+      const verdict = finished.verdict;
+      toast.success("Review complete", {
+        description: verdict === "approve"
+          ? "Looks good to merge."
+          : verdict === "request_changes"
+          ? "Changes requested — check the comments."
+          : "Needs more info before merging.",
+      });
 
       fetch("/api/reviews", {
         method: "POST",
@@ -64,12 +82,17 @@ export default function AppPage() {
           setHistory(prev => [entry, ...prev.filter(h => h.prUrl !== prUrl)]);
           setSelected(entry);
         })
-        .catch(() => {});
+        .catch(() => toast.error("Couldn't save review to history"));
 
       // send notifications if webhooks configured
       const { slackWebhook, discordWebhook } = settingsRef.current;
-      if (slackWebhook) notifySlack(slackWebhook, finished as PRReview, prUrl).catch(() => {});
-      if (discordWebhook) notifyDiscord(discordWebhook, finished as PRReview, prUrl).catch(() => {});
+      if (slackWebhook) notifySlack(slackWebhook, finished as PRReview, prUrl).catch(() => toast.error("Slack notification failed"));
+      if (discordWebhook) notifyDiscord(discordWebhook, finished as PRReview, prUrl).catch(() => toast.error("Discord notification failed"));
+    },
+    onError(err) {
+      toast.error("Review failed", {
+        description: err instanceof Error ? err.message : "Check the PR URL and try again.",
+      });
     },
   });
 
@@ -189,15 +212,6 @@ export default function AppPage() {
           </div>
 
           {/* error */}
-          {error && (
-            <div style={{
-              padding: "11px 14px", borderRadius: 9, fontSize: 13,
-              background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA",
-            }}>
-              {error.message}
-            </div>
-          )}
-
           {hasReview && (
             <>
               {/* PR header */}
@@ -219,9 +233,10 @@ export default function AppPage() {
                 </div>
               </div>
 
-              {/* export */}
+              {/* export + ship it */}
               {selected?.review && !isLoading && (
-                <div className="pr-section" style={{ display: "flex", justifyContent: "flex-end" }}>
+                <div className="pr-section" style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <ShipItModal prUrl={prUrl} review={selected.review} prTitle={`${repo} #${prNumber}`} />
                   <ExportButton review={selected.review} prUrl={prUrl} />
                 </div>
               )}
@@ -233,6 +248,26 @@ export default function AppPage() {
                 <MetricCard label="Suggestions" value={counts.suggestion} color="#2563EB" accent="#DBEAFE" />
                 <MetricCard label="Praise"      value={counts.praise}     color="#16A34A" accent="#DCFCE7" />
               </div>
+
+              {/* risk radar + file treemap side by side */}
+              {review.changedFiles && review.changedFiles.length > 0 && (
+                <div className="pr-section" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                  <div style={{
+                    background: "var(--color-background-primary)",
+                    border: "1px solid var(--color-border-secondary)",
+                    borderRadius: 10, padding: "14px 16px",
+                  }}>
+                    <RiskRadarChart review={review} files={review.changedFiles} />
+                  </div>
+                  <div style={{
+                    background: "var(--color-background-primary)",
+                    border: "1px solid var(--color-border-secondary)",
+                    borderRadius: 10, padding: "14px 16px",
+                  }}>
+                    <FileRiskTreemap files={review.changedFiles} review={review} />
+                  </div>
+                </div>
+              )}
 
               {/* summary + voice */}
               {review.summary && (
@@ -258,6 +293,14 @@ export default function AppPage() {
                 <div className="pr-section"><CIChecksPanel checks={review.ciChecks} /></div>
               )}
 
+              {review.mergeConflictRisks && review.mergeConflictRisks.length > 0 && (
+                <div className="pr-section"><MergeConflictPanel risks={review.mergeConflictRisks} /></div>
+              )}
+
+              {review.timeBombs && review.timeBombs.length > 0 && (
+                <div className="pr-section"><TimeBombPanel bombs={review.timeBombs} /></div>
+              )}
+
               {review.vulnerabilities && review.vulnerabilities.length > 0 && (
                 <div className="pr-section"><VulnerabilitiesPanel vulnerabilities={review.vulnerabilities} /></div>
               )}
@@ -268,6 +311,21 @@ export default function AppPage() {
 
               {review.changedFiles && review.changedFiles.length > 0 && (
                 <div className="pr-section"><DiffHeatmap files={review.changedFiles} /></div>
+              )}
+
+              {review.archaeology && review.archaeology.length > 0 && (
+                <div className="pr-section"><ArchaeologyPanel entries={review.archaeology} /></div>
+              )}
+
+              {/* issue scatter map */}
+              {review.comments && review.comments.length > 0 && review.changedFiles && (
+                <div className="pr-section" style={{
+                  background: "var(--color-background-primary)",
+                  border: "1px solid var(--color-border-secondary)",
+                  borderRadius: 10, padding: "14px 16px",
+                }}>
+                  <IssueScatterMap review={review} files={review.changedFiles} />
+                </div>
               )}
 
               {/* positives */}
@@ -347,6 +405,13 @@ export default function AppPage() {
                 </div>
               )}
 
+              {/* persona reactor */}
+              {selected?.review && !isLoading && (
+                <div className="pr-section">
+                  <PersonaPanel prUrl={prUrl} />
+                </div>
+              )}
+
               {selected?.review && !isLoading && (
                 <div className="pr-section">
                   <PRChatPanel prUrl={prUrl} review={selected.review} reviewId={selected.id} />
@@ -355,7 +420,7 @@ export default function AppPage() {
             </>
           )}
 
-          {!hasReview && !isLoading && !error && <EmptyState />}
+          {!hasReview && !isLoading && <EmptyState />}
 
           {isLoading && !hasReview && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 8 }}>
