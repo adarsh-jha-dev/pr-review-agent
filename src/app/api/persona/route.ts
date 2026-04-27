@@ -53,7 +53,7 @@ ${diff}
 \`\`\`
 
 Respond as ${cfg.name}.`,
-    maxOutputTokens: 350,
+    maxOutputTokens: 512,
   });
 
   return result.toTextStreamResponse();

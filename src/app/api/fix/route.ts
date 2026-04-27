@@ -13,7 +13,7 @@ Severity: ${severity}
 Issue: ${message}
 
 Provide a concrete, minimal fix. Show the corrected code in a markdown code block with the right language tag. Add one short sentence explaining the fix. Do not repeat the issue description.`.trim(),
-    maxOutputTokens: 512,
+    maxOutputTokens: 1024,
   });
 
   return result.toTextStreamResponse();

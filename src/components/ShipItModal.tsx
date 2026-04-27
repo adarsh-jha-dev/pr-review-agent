@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Rocket, X, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
@@ -17,10 +17,13 @@ export function ShipItModal({ prUrl, review, prTitle }: Props) {
   const [text, setText]       = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied]   = useState(false);
+  // ref so generate() always sees the current value, not a stale closure
+  const hasText = useRef(false);
 
-  async function generate() {
+  async function generate(force = false) {
     setOpen(true);
-    if (text) return;
+    if (hasText.current && !force) return;
+    hasText.current = false;
     setLoading(true);
     setText("");
     const criticalCount = review.comments?.filter(c => c.severity === "critical").length ?? 0;
@@ -39,19 +42,22 @@ export function ShipItModal({ prUrl, review, prTitle }: Props) {
           positives: review.positives ?? [],
         }),
       });
-      if (!res.ok) throw new Error(`Failed (${res.status})`);
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
       const reader = res.body!.getReader();
-      const dec = new TextDecoder();
+      // pass { stream: true } so multi-byte chars split across chunks decode correctly
+      const dec = new TextDecoder("utf-8", { fatal: false });
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        setText(p => p + dec.decode(value));
+        setText(p => p + dec.decode(value, { stream: true }));
       }
+      // flush any remaining bytes
+      setText(p => p + dec.decode());
+      hasText.current = true;
     } catch (err) {
       toast.error("Couldn't generate announcement", {
         description: err instanceof Error ? err.message : "Something went wrong",
       });
-      setOpen(false);
     }
     setLoading(false);
   }
@@ -125,7 +131,7 @@ export function ShipItModal({ prUrl, review, prTitle }: Props) {
           display: "flex", justifyContent: "flex-end", gap: 8, flexShrink: 0,
         }}>
           <button
-            onClick={() => { setText(""); generate(); }}
+            onClick={() => generate(true)}
             disabled={loading}
             style={{
               padding: "8px 14px", borderRadius: 8, cursor: loading ? "not-allowed" : "pointer",
@@ -160,7 +166,7 @@ export function ShipItModal({ prUrl, review, prTitle }: Props) {
   return (
     <>
       <button
-        onClick={generate}
+        onClick={() => generate()}
         style={{
           height: 40, padding: "0 14px", borderRadius: 9, cursor: "pointer",
           background: "#16A34A", color: "#fff", border: "none",
